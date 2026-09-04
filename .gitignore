@@ -1,0 +1,12 @@
+# Pico SDK / CMake output
+build/
+build-*/
+cmake-build-*/
+
+# Patch/editor backups
+*.orig
+*.rej
+*~
+
+# OS/editor metadata
+.DS_Store
