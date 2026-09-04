@@ -5,7 +5,7 @@
 
 namespace config {
 inline constexpr char DEVICE_NAME[] = "RP2040-ETH-BATTERY-MONITOR";
-inline constexpr char FIRMWARE_VERSION[] = "1.0.0";
+inline constexpr char FIRMWARE_VERSION[] = "1.1.0";
 
 inline constexpr uint HTTP_PORT = 80;
 
@@ -20,6 +20,12 @@ inline constexpr double MAX_CURRENT = 204.8;
 inline constexpr uint32_t SENSOR_SAMPLE_RATE_HZ = 20;
 inline constexpr float EMA_ALPHA = 0.2f;
 inline constexpr uint32_t SENSOR_RESCAN_MS = 2000;
+
+inline constexpr uint32_t BATTERY_CELLS = 16;
+inline constexpr double BATTERY_CAPACITY_AH = 20.0; // 20000 mAh
+inline constexpr double BATTERY_PACK_RESISTANCE_OHM = 0.08;
+inline constexpr double SOC_REST_CURRENT_A = 1.0;
+inline constexpr double SOC_VOLTAGE_CORRECTION_ALPHA = 0.001;
 
 inline uart_inst_t* const CH9120_UART = uart1;
 inline constexpr uint CH9120_TX_PIN = 20; // RP2040 TX -> CH9120 RXD

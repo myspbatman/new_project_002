@@ -94,6 +94,29 @@ The driver uses TI's device-specific register widths and equations. With a 200 Â
 
 Samples are cached at 20 Hz. EMA filtering defaults to alpha 0.2. Ah and Wh use actual elapsed microseconds and are not integrated across a long sensor outage.
 
+### 16S Li-ion state of charge
+
+The configured pack is `16S`, `20 Ah` (`20000 mAh`). SOC uses a hybrid model:
+
+1. Loaded pack voltage is compensated for current:
+   `V_ocv_est = V_pack + I * R_pack`, where positive current means discharge.
+2. `V_ocv_est / 16` is converted to an initial percentage with a piecewise
+   Li-ion OCV curve from 3.00 V/cell (0%) to 4.20 V/cell (100%).
+3. Every valid sample applies coulomb counting using real elapsed time:
+   `SOC_new = SOC_old - I * delta_hours / 20 Ah * 100`.
+4. When absolute current is below 1 A, SOC slowly converges toward the
+   voltage-derived estimate to limit long-term current-integration drift.
+5. The result is clamped to 0â€“100%; remaining capacity is
+   `20 Ah * SOC / 100`.
+
+Default pack resistance is `0.08 ohm` and must be tuned for the real cells,
+wiring, connectors, temperature, and pack age using
+`BATTERY_PACK_RESISTANCE_OHM` in `src/config/config.h`. Positive current must
+correspond to discharge; if charging decreases the displayed percentage or
+discharging increases it, reverse the current-path orientation. SOC is
+re-initialized from voltage after reboot or the reset endpoint and is an
+estimate, not a replacement for a certified BMS.
+
 ## Build and flash
 
 Install the Arm embedded toolchain, CMake, and Raspberry Pi Pico SDK, then:
@@ -137,10 +160,18 @@ curl -X POST http://DEVICE_IP/api/v1/battery/reset
 ```json
 {
   "device": "RP2040-ETH-BATTERY-MONITOR",
-  "firmware": "1.0.0",
+  "firmware": "1.1.0",
   "ip": "192.168.31.68",
   "sensor": {"type": "INA228", "ok": true},
-  "battery": {"voltage": 48.72, "current": 12.43, "power": 605.59},
+  "battery": {
+    "voltage": 48.72,
+    "current": 12.43,
+    "power": 605.59,
+    "capacity_mah": 20000,
+    "remaining_mah": 14600,
+    "soc_percent": 73.0,
+    "soc_valid": true
+  },
   "timestamp_ms": 12345678
 }
 ```
@@ -152,6 +183,12 @@ curl -X POST http://DEVICE_IP/api/v1/battery/reset
   "voltage": 48.72,
   "current": 12.43,
   "power": 605.59,
+  "capacity_ah": 20.0,
+  "capacity_mah": 20000,
+  "remaining_ah": 14.6,
+  "remaining_mah": 14600,
+  "soc_percent": 73.0,
+  "soc_valid": true,
   "consumed_ah": 1.42,
   "consumed_mah": 1420.0,
   "consumed_wh": 68.4,

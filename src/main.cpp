@@ -25,8 +25,8 @@ int main() {
         if (now >= next_log) {
             next_log = now + 1000; const auto m = battery.snapshot();
             const auto& ni = network.info();
-            printf("[STATUS] sensor=%s V=%.3f A=%.3f W=%.3f network=%s ip=%u.%u.%u.%u\n",
-                   m.sensor_ok?"ok":"offline",m.voltage,m.current,m.power,network.ready()?"ready":"dhcp",
+            printf("[STATUS] sensor=%s V=%.3f A=%.3f W=%.3f SOC=%.1f%% network=%s ip=%u.%u.%u.%u\n",
+                   m.sensor_ok?"ok":"offline",m.voltage,m.current,m.power,m.soc_percent,network.ready()?"ready":"dhcp",
                    ni.ip[0],ni.ip[1],ni.ip[2],ni.ip[3]);
         }
         app_watchdog::feed(); tight_loop_contents();

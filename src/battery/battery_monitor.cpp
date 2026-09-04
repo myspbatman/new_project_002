@@ -6,7 +6,31 @@
 #include "hardware/gpio.h"
 #include "pico/time.h"
 
-BatteryMonitor::BatteryMonitor() : sensor_(config::I2C_PORT) { critical_section_init(&lock_); }
+BatteryMonitor::BatteryMonitor() : sensor_(config::I2C_PORT) {
+    critical_section_init(&lock_);
+    measurements_.capacity_ah = config::BATTERY_CAPACITY_AH;
+}
+
+double BatteryMonitor::voltageSoc(double pack_voltage, double current_a) {
+    struct Point { double voltage; double percent; };
+    static constexpr Point curve[] = {
+        {3.00, 0}, {3.30, 5}, {3.50, 10}, {3.60, 20}, {3.70, 40},
+        {3.80, 60}, {3.90, 75}, {4.00, 85}, {4.10, 95}, {4.20, 100}
+    };
+    // Positive current means discharge. Compensate configurable I*R sag/rise
+    // before using the per-cell open-circuit-voltage lookup curve.
+    const double cell_v = (pack_voltage + current_a * config::BATTERY_PACK_RESISTANCE_OHM) /
+                          config::BATTERY_CELLS;
+    if (cell_v <= curve[0].voltage) return 0;
+    for (size_t i = 1; i < sizeof(curve) / sizeof(curve[0]); ++i) {
+        if (cell_v <= curve[i].voltage) {
+            const double fraction = (cell_v - curve[i-1].voltage) /
+                                    (curve[i].voltage - curve[i-1].voltage);
+            return curve[i-1].percent + fraction * (curve[i].percent - curve[i-1].percent);
+        }
+    }
+    return 100;
+}
 
 void BatteryMonitor::init() {
     i2c_init(config::I2C_PORT, config::I2C_FREQUENCY);
@@ -62,13 +86,29 @@ void BatteryMonitor::setMeasurement(const InaReading& r, uint64_t now_ms) {
         measurements_.current += a * (r.current_a - measurements_.current);
         measurements_.power += a * (r.power_w - measurements_.power);
     }
+    const double voltage_soc = voltageSoc(measurements_.voltage, measurements_.current);
+    if (!soc_initialized_) {
+        measurements_.soc_percent = voltage_soc;
+        soc_initialized_ = true;
+    }
     if (last_valid_us_ != 0) {
         const double dt_h = (now_us - last_valid_us_) / 3.6e9;
         if (dt_h <= 1.0 / 60.0) { // never integrate across a long sensor outage
             measurements_.consumed_ah += r.current_a * dt_h;
             measurements_.consumed_wh += r.power_w * dt_h;
+            measurements_.soc_percent -= r.current_a * dt_h /
+                                             config::BATTERY_CAPACITY_AH * 100.0;
+            if (std::fabs(measurements_.current) <= config::SOC_REST_CURRENT_A) {
+                measurements_.soc_percent += config::SOC_VOLTAGE_CORRECTION_ALPHA *
+                                             (voltage_soc - measurements_.soc_percent);
+            }
         }
     }
+    if (measurements_.soc_percent < 0) measurements_.soc_percent = 0;
+    if (measurements_.soc_percent > 100) measurements_.soc_percent = 100;
+    measurements_.remaining_ah = config::BATTERY_CAPACITY_AH *
+                                 measurements_.soc_percent / 100.0;
+    measurements_.soc_valid = true;
     last_valid_us_ = now_us;
     measurements_.raw_voltage = r.voltage_v; measurements_.raw_current = r.current_a; measurements_.raw_power = r.power_w;
     measurements_.raw = r.raw; measurements_.timestamp_ms = now_ms;
@@ -80,5 +120,8 @@ Measurements BatteryMonitor::snapshot() const {
     critical_section_enter_blocking(&lock_); Measurements copy = measurements_; critical_section_exit(&lock_); return copy;
 }
 void BatteryMonitor::resetCounters() {
-    critical_section_enter_blocking(&lock_); measurements_.consumed_ah = 0; measurements_.consumed_wh = 0; critical_section_exit(&lock_);
+    critical_section_enter_blocking(&lock_);
+    measurements_.consumed_ah = 0; measurements_.consumed_wh = 0;
+    measurements_.soc_valid = false; soc_initialized_ = false;
+    critical_section_exit(&lock_);
 }
