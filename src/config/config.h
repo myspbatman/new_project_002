@@ -5,7 +5,7 @@
 
 namespace config {
 inline constexpr char DEVICE_NAME[] = "RP2040-ETH-BATTERY-MONITOR";
-inline constexpr char FIRMWARE_VERSION[] = "1.1.0";
+inline constexpr char FIRMWARE_VERSION[] = "1.1.1";
 
 inline constexpr uint HTTP_PORT = 80;
 
@@ -35,6 +35,10 @@ inline constexpr uint CH9120_CFG0_PIN = 18;
 inline constexpr uint CH9120_RSTI_PIN = 19;
 inline constexpr uint32_t CH9120_CONFIG_BAUD = 9600;
 inline constexpr uint32_t CH9120_DATA_BAUD = 921600;
+inline constexpr bool CH9120_USE_DHCP = false;
+inline constexpr uint8_t CH9120_STATIC_IP[] = {192, 168, 88, 248};
+inline constexpr uint8_t CH9120_STATIC_SUBNET[] = {255, 255, 255, 0};
+inline constexpr uint8_t CH9120_STATIC_GATEWAY[] = {192, 168, 88, 1};
 inline constexpr uint32_t DHCP_TIMEOUT_MS = 15000;
 inline constexpr uint32_t DHCP_RETRY_MS = 5000;
 

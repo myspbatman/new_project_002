@@ -4,14 +4,14 @@ Production-oriented Raspberry Pi Pico SDK firmware for:
 
 `MATEK I2C-INA-BM -> I2C -> Waveshare RP2040-ETH -> CH9120 -> HTTP`
 
-The CH9120 is configured as a DHCP-enabled TCP server on port 80. It is a transparent UART/Ethernet bridge, so the firmware implements the HTTP/1.0/1.1 parser on the RP2040. No static IP is compiled into the firmware.
+The CH9120 is configured as a TCP server on port 80 with the static address `192.168.88.248`. It is a transparent UART/Ethernet bridge, so the firmware implements the HTTP/1.0/1.1 parser on the RP2040.
 
 ## On-board RGB status LED
 
 The WS2812 RGB LED is driven by PIO on GP25:
 
 - purple: firmware boot;
-- blinking blue: waiting for DHCP/network;
+- blinking blue: waiting for the Ethernet network;
 - solid green: network ready and INA sensor healthy;
 - blinking amber: network ready but INA sensor missing or invalid.
 
@@ -26,7 +26,7 @@ Brightness and pin are configurable with `STATUS_LED_BRIGHTNESS` and
 - MATEK I2C-INA-BM module with INA228 or INA238 and 200 µΩ shunt;
 - regulated 5 V supply for the MATEK module (its `5V` input accepts 4–9 V);
 - USB-C cable or another suitable supply for RP2040-ETH;
-- Ethernet cable and a router with an enabled DHCP server;
+- Ethernet cable and a router or switch on the `192.168.88.0/24` network;
 - four-wire signal cable for `5V`, `GND`, `SDA`, and `SCL`;
 - battery/load cables sized for the actual current, correctly rated terminals,
   and an appropriately rated fuse close to the battery source;
@@ -122,7 +122,7 @@ estimate, not a replacement for a certified BMS.
 Install the Arm embedded toolchain, CMake, and Raspberry Pi Pico SDK, then:
 
 ```sh
-cd /home/mysp/rp2040-eth-battery-monitor
+cd /home/mysp/new_project_002
 cmake -S . -B build -DPICO_SDK_PATH=/absolute/path/to/pico-sdk
 cmake --build build -j
 ```
@@ -131,11 +131,16 @@ The result is `build/rp2040_eth_battery_monitor.uf2`. Hold BOOT while resetting/
 
 USB serial debug output is enabled. The baud value shown by terminal applications can be set to 115200 (USB CDC itself is not baud-rate dependent).
 
-## DHCP and CH9120 behavior
+## Static IP and CH9120 behavior
 
-At boot, firmware uses the documented hardware CFG0 method and 9600-baud configuration protocol to select TCP Server, local port 80, 921600-baud data UART, and DHCP. Configuration is saved to CH9120 EEPROM. It then polls the documented current IP/mask/gateway registers for up to 15 seconds and retries without falling back to a static address.
+At boot, firmware uses the documented hardware CFG0 method and 9600-baud configuration protocol to select TCP Server, local port 80, 921600-baud data UART, and the following static network settings:
 
-Before requesting DHCP, stale address fields are cleared. On the tested Waveshare module CH9120 reports `10.10.10.10` as a no-lease fallback when Ethernet is unplugged; firmware explicitly treats that value as unassigned rather than announcing a false DHCP success.
+- IP address: `192.168.88.248`;
+- subnet mask: `255.255.255.0` (`/24`);
+- gateway: `192.168.88.1`;
+- DHCP: disabled.
+
+The configuration is saved to CH9120 EEPROM. The firmware then reads the active IP, mask, and gateway registers and starts the HTTP service. The host accessing the device must be connected to the same `192.168.88.0/24` network. Ensure that no other device uses `192.168.88.248`.
 
 CH9120 exposes one transparent TCP stream, not multiple hardware sockets. Requests are processed sequentially. Responses include `Connection: close` and `Content-Length`; the HTTP client is expected to close the TCP connection after consuming the response. TLS, chunked encoding, keep-alive pipelining, and concurrent clients are intentionally unsupported.
 
@@ -147,12 +152,12 @@ unsigned milliseconds since boot. Invalid measurements are returned as zero
 with `sensor_ok: false`; the API never emits `NaN` or `Infinity`.
 
 ```sh
-curl http://DEVICE_IP/api/v1/battery
-curl http://DEVICE_IP/api/v1/battery/raw
-curl http://DEVICE_IP/api/v1/status
-curl http://DEVICE_IP/health
-curl http://DEVICE_IP/
-curl -X POST http://DEVICE_IP/api/v1/battery/reset
+curl http://192.168.88.248/api/v1/battery
+curl http://192.168.88.248/api/v1/battery/raw
+curl http://192.168.88.248/api/v1/status
+curl http://192.168.88.248/health
+curl http://192.168.88.248/
+curl -X POST http://192.168.88.248/api/v1/battery/reset
 ```
 
 ### `GET /`
@@ -160,8 +165,8 @@ curl -X POST http://DEVICE_IP/api/v1/battery/reset
 ```json
 {
   "device": "RP2040-ETH-BATTERY-MONITOR",
-  "firmware": "1.1.0",
-  "ip": "192.168.31.68",
+  "firmware": "1.1.1",
+  "ip": "192.168.88.248",
   "sensor": {"type": "INA228", "ok": true},
   "battery": {
     "voltage": 48.72,
@@ -207,7 +212,28 @@ power register; converted voltage, current and power; and `sensor_ok`.
 
 ### `GET /api/v1/status`
 
-Returns device identity and uptime plus nested `network` and `sensor` objects.
+Returns device identity and uptime plus nested `network` and `sensor` objects. With the current static configuration, a typical response is:
+
+```json
+{
+  "device": "RP2040-ETH-BATTERY-MONITOR",
+  "firmware": "1.1.1",
+  "uptime": 12345678,
+  "network": {
+    "connected": true,
+    "dhcp": false,
+    "ip": "192.168.88.248",
+    "gateway": "192.168.88.1",
+    "subnet": "255.255.255.0"
+  },
+  "sensor": {
+    "connected": true,
+    "type": "INA228",
+    "address": "0x45",
+    "shunt_ohm": 0.0002000
+  }
+}
+```
 
 ### `GET /health`
 

@@ -47,21 +47,24 @@ bool Ch9120::configure() {
     enterConfig();
     const uint8_t server = 0;
     const uint8_t zero_address[] = {0, 0, 0, 0};
+    const uint8_t* ip = config::CH9120_USE_DHCP ? zero_address : config::CH9120_STATIC_IP;
+    const uint8_t* mask = config::CH9120_USE_DHCP ? zero_address : config::CH9120_STATIC_SUBNET;
+    const uint8_t* gateway = config::CH9120_USE_DHCP ? zero_address : config::CH9120_STATIC_GATEWAY;
     const uint8_t port[] = {uint8_t(config::HTTP_PORT & 0xff), uint8_t(config::HTTP_PORT >> 8)};
     const uint32_t baud = config::CH9120_DATA_BAUD;
     const uint8_t baud_le[] = {uint8_t(baud), uint8_t(baud >> 8), uint8_t(baud >> 16), uint8_t(baud >> 24)};
     const uint8_t uart_format[] = {1, 4, 8}; // 1 stop, no parity, 8 data bits
     const uint8_t timeout[] = {1, 0, 0, 0}; // approximately 5 ms UART packet timeout
     const uint8_t enabled = 1;
+    const uint8_t dhcp = config::CH9120_USE_DHCP ? 1 : 0;
     const uint8_t rx_length[] = {0, 2, 0, 0}; // 512-byte maximum packet
-    // Clear a persisted previous DHCP lease before requesting a fresh one.
     bool ok = command(CMD_SET_MODE, &server, 1) &&
-        command(CMD_SET_IP, zero_address, 4) && command(CMD_SET_MASK, zero_address, 4) &&
-        command(CMD_SET_GATEWAY, zero_address, 4) && command(CMD_SET_PORT, port, 2) &&
+        command(CMD_SET_IP, ip, 4) && command(CMD_SET_MASK, mask, 4) &&
+        command(CMD_SET_GATEWAY, gateway, 4) && command(CMD_SET_PORT, port, 2) &&
         command(CMD_SET_BAUD, baud_le, 4) && command(CMD_SET_UART_FORMAT, uart_format, 3) &&
         command(CMD_SET_TIMEOUT, timeout, 4) && command(CMD_DISCONNECT_ON_LINK_LOSS, &enabled, 1) &&
         command(CMD_RX_LENGTH, rx_length, 4) && command(CMD_FLUSH_ON_CONNECT, &enabled, 1) &&
-        command(CMD_DHCP, &enabled, 1) && command(CMD_SAVE, nullptr, 0) &&
+        command(CMD_DHCP, &dhcp, 1) && command(CMD_SAVE, nullptr, 0) &&
         command(CMD_APPLY_AND_RESET, nullptr, 0);
     leaveConfig();
     sleep_ms(500);
@@ -80,7 +83,8 @@ void Ch9120::init(uint64_t now_ms) {
     printf("[ETH] initializing CH9120\n");
     gpio_put(config::CH9120_RSTI_PIN, 0); sleep_ms(20); gpio_put(config::CH9120_RSTI_PIN, 1); sleep_ms(250);
     if (!configure()) printf("[ETH] configuration failed; retrying\n");
-    printf("[DHCP] requesting address\n"); state_ = State::WaitingDhcp; deadline_ms_ = now_ms + config::DHCP_TIMEOUT_MS;
+    printf(config::CH9120_USE_DHCP ? "[NET] requesting DHCP address\n" : "[NET] applying static address\n");
+    state_ = State::WaitingDhcp; deadline_ms_ = now_ms + config::DHCP_TIMEOUT_MS;
 }
 
 bool Ch9120::queryAddress(uint8_t code, uint8_t address[4]) { return command(code, nullptr, 0, address, 4); }
@@ -114,7 +118,7 @@ void Ch9120::task(uint64_t now_ms) {
         next_query = now_ms + 1000;
         if (queryNetwork()) {
             char ip[16], gw[16], mask[16]; formatIp(info_.ip, ip, sizeof(ip)); formatIp(info_.gateway, gw, sizeof(gw)); formatIp(info_.subnet, mask, sizeof(mask));
-            printf("[DHCP] IP: %s\n[DHCP] Gateway: %s\n[DHCP] Subnet: %s\n[HTTP] server started :%u\n", ip, gw, mask, config::HTTP_PORT);
+            printf("[NET] IP: %s\n[NET] Gateway: %s\n[NET] Subnet: %s\n[HTTP] server started :%u\n", ip, gw, mask, config::HTTP_PORT);
             state_ = State::Ready; return;
         }
     }

@@ -3,10 +3,11 @@
 #include <cstddef>
 #include <cstdint>
 #include "hardware/uart.h"
+#include "config/config.h"
 
 struct NetworkInfo {
     bool connected = false;
-    bool dhcp = true;
+    bool dhcp = config::CH9120_USE_DHCP;
     uint8_t ip[4] = {}, gateway[4] = {}, subnet[4] = {};
 };
 
